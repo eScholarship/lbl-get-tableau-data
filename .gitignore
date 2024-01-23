@@ -2,5 +2,5 @@ creds.py
 __pycache__
 .DS_Store
 output/*
-osti_files/*
+input_osti_xlsx_files/*
 .idea

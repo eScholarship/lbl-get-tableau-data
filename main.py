@@ -1,11 +1,17 @@
-# Requests docs: requests.readthedocs.org/en/latest/
-import requests
+# Internal imports
 import csv
 import argparse
 import creds
 import os
+
+# External imports
+import requests
+# http://requests.readthedocs.org/en/latest/
 import pyodbc
+# https://github.com/mkleehammer/pyodbc/wiki
 import openpyxl
+# https://openpyxl.readthedocs.io/en/stable/
+
 
 # -----------------------------
 # Arguments
@@ -52,6 +58,7 @@ def main():
         server.stop()
 
     print("Program complete. Exiting.")
+
 
 # ----------------------------------------
 def create_output_dir():
@@ -132,12 +139,13 @@ def get_reporting_db_data():
 
     conn.close()
 
+
 # ----------------------------------------
 def export_osti_fy_data():
     print("Exporting/converting OSTI files")
 
     # Get the OSTI files, filter for any non-xlsx
-    osti_files = os.listdir("osti_files")
+    osti_files = os.listdir("input_osti_xlsx_files")
     osti_files = [file for file in osti_files if ".xlsx" in file]
 
     for osti_file in osti_files:
