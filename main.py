@@ -237,9 +237,7 @@ def transfer_to_google_drive():
                            for filename in files_to_upload]
 
         # Get the file IDs in the g drive tableau data forlder
-        # tableau_data_folder_id = '1HbkWZYiptaecVIXMUH3hv9zX4qrYUiWE'
-        # Testing below
-        tableau_data_folder_id = '13L_Au84OUuxReEVPw7Veh0WdSwF_3rwV'
+        tableau_data_folder_id = '1HbkWZYiptaecVIXMUH3hv9zX4qrYUiWE'
         parent_folder_query = "'" + tableau_data_folder_id + "' in parents"
         results = (
             service.files().list(
