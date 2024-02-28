@@ -3,6 +3,7 @@ import csv
 import argparse
 import creds
 import os
+from pprint import pprint
 
 # External imports
 import requests
@@ -253,7 +254,8 @@ def transfer_to_google_drive():
 
         # Get the files and print a spot-check
         google_drive_files = results.get("files", [])
-        print("G Drive tableau data folder files:", google_drive_files)
+        print("G Drive tableau data folder files:")
+        pprint(google_drive_files)
 
         # Assign extant IDs to files for upload
         for g_file in google_drive_files:
