@@ -4,3 +4,7 @@ __pycache__
 output/*
 input_osti_xlsx_files/*
 .idea
+token.json
+credentials.json
+creds.py
+logs/

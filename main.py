@@ -23,6 +23,24 @@ parser.add_argument("-t", "--tunnel",
                     default=False,
                     help="Optional. Include to run the connection through a tunnel.")
 
+parser.add_argument("-fy", "--ostifyfiles",
+                    dest="process_osti_fy_files",
+                    action="store_true",
+                    default=False,
+                    help="Optional. Process the OSTI FY xlsx files (upload these to /input).")
+
+parser.add_argument("-g", "--googledrive",
+                    dest="transfer_to_google_drive",
+                    action="store_true",
+                    default=False,
+                    help="Optional. Uploads resulting files to the lbl tableau data google drive.")
+
+parser.add_argument("-nt", "--newtoken",
+                    dest="create_new_token",
+                    action="store_true",
+                    default=False,
+                    help="TK TK not yet implemented: Optional. Creates a new google drive token.")
+
 args = parser.parse_args()
 
 
@@ -52,7 +70,12 @@ def main():
     get_reporting_db_data()
 
     # Load the OSTI FY xlsx workbooks, export LBNL sheet as .csv
-    export_osti_fy_data()
+    if args.process_osti_fy_files:
+        export_osti_fy_data()
+
+    # Transfer output files to google drive
+    if args.transfer_to_google_drive:
+        transfer_to_google_drive()
 
     if args.tunnel_needed:
         server.stop()
@@ -65,7 +88,7 @@ def create_output_dir():
     from datetime import datetime
     global output_dir
 
-    output_dir = 'output/' + datetime.today().strftime('%Y-%m-%d')
+    output_dir = 'output/' + datetime.today().strftime('%Y-%m-%d-%H-%M-%S')
     os.mkdir(output_dir)
 
     print("Updated files will be output to: ", output_dir)
@@ -174,7 +197,103 @@ def export_osti_fy_data():
 
 
 # ----------------------------------------
-# Press the green button in the gutter to run the script.
+def transfer_to_google_drive():
+
+    # import google drive packages
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    from googleapiclient.http import MediaIoBaseDownload
+
+    # If modifying these scopes, you need to create a new token.json.
+    g_scopes = ["https://www.googleapis.com/auth/drive"]
+
+    # This token may need to be refreshed at some point.
+    # TK TK cross that bridge when needed
+    if os.path.exists("token.json"):
+        g_creds = Credentials.from_authorized_user_file("token.json", g_scopes)
+    else:
+        raise "No token.json found in this directory. Cannot connect to google drive."
+        exit(1)
+
+    try:
+        # Create the google drive API service
+        service = build("drive", "v3", credentials=g_creds)
+
+        # Collect the files to load and reformat as dicts
+        files_to_upload = [
+            "lbl_hr_feed.csv",
+            "Publication_Metadata.csv",
+            "Unclaimed_Publication_Metadata.csv",
+            "User_Pub_Relationships.csv"
+        ]
+
+        if args.process_osti_fy_files:
+            files_to_upload.append(["fy2022.csv", "fy2023.csv", "fy2024.csv"])
+
+        files_to_upload = [{'name': filename, 'id': None}
+                           for filename in files_to_upload]
+
+        # Get the file IDs in the g drive tableau data forlder
+        tableau_data_folder_id = '1HbkWZYiptaecVIXMUH3hv9zX4qrYUiWE'
+        parent_folder_query = "'" + tableau_data_folder_id + "' in parents"
+        results = (
+            service.files().list(
+                # pageSize=10,
+                includeItemsFromAllDrives=True,
+                includeTeamDriveItems=True,
+                supportsAllDrives=True,
+                supportsTeamDrives=True,
+                q=parent_folder_query,
+                fields="nextPageToken, files(id, name)",
+            ).execute()
+        )
+
+        # Get the files and print a spot-check
+        google_drive_files = results.get("files", [])
+        print("G Drive tableau data folder files:", google_drive_files)
+
+        # Assign extant IDs to files for upload
+        for g_file in google_drive_files:
+            for u_file in files_to_upload:
+                if g_file['name'] == u_file['name']:
+                    u_file['id'] = g_file['id']
+
+        for upload_file in files_to_upload:
+            upload_file_path = output_dir + "/" + upload_file['name']
+
+            # No matching file in the folder, create a new file:
+            if upload_file['id'] is None:
+                metadata = {
+                    'name': upload_file['name'],
+                    'mimeType': 'text/csv',
+                    'parents': [tableau_data_folder_id]}
+
+                response = service.files().create(
+                    body=metadata,
+                    media_body=upload_file_path,
+                ).execute()
+
+                if response:
+                    print("CREATED NEW FILE:", response)
+
+            # The file already exists, update it with the new content.
+            else:
+
+                response = service.files().update(
+                    fileId=upload_file['id'],
+                    media_body=upload_file_path,
+                ).execute()
+
+                if response:
+                    print("UPDATED FILE:", response)
+
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+
+
+# ----------------------------------------
 if __name__ == '__main__':
     main()
-
