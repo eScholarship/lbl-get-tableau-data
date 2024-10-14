@@ -1,9 +1,9 @@
 # Internal imports
 import csv
 import argparse
-import creds
 import os
 from pprint import pprint
+
 
 # External imports
 import requests
@@ -12,10 +12,12 @@ import pyodbc
 # https://github.com/mkleehammer/pyodbc/wiki
 import openpyxl
 # https://openpyxl.readthedocs.io/en/stable/
+from dotenv import dotenv_values
 
 
 # -----------------------------
-# Arguments
+# Creds and Arguments
+creds = dotenv_values()
 parser = argparse.ArgumentParser()
 
 parser.add_argument("-t", "--tunnel",
@@ -49,18 +51,18 @@ args = parser.parse_args()
 def main():
 
     # Start the tunnel if needed
-    if args.tunnel_needed:
-        print("Opening SSH tunnel.")
-        from sshtunnel import SSHTunnelForwarder
-
-        server = SSHTunnelForwarder(
-            creds.ssh_creds['host'],
-            ssh_username=creds.ssh_creds['username'],
-            ssh_password=creds.ssh_creds['password'],
-            remote_bind_address=creds.ssh_creds['remote'],
-            local_bind_address=creds.ssh_creds['local'])
-
-        server.start()
+    # if args.tunnel_needed:
+    #     print("Opening SSH tunnel.")
+    #     from sshtunnel import SSHTunnelForwarder
+    #
+    #     server = SSHTunnelForwarder(
+    #         creds.ssh_creds['host'],
+    #         ssh_username=creds.ssh_creds['username'],
+    #         ssh_password=creds.ssh_creds['password'],
+    #         remote_bind_address=creds.ssh_creds['remote'],
+    #         local_bind_address=creds.ssh_creds['local'])
+    #
+    #     server.start()
 
     create_output_dir()
 
@@ -78,8 +80,8 @@ def main():
     if args.transfer_to_google_drive:
         transfer_to_google_drive()
 
-    if args.tunnel_needed:
-        server.stop()
+    # if args.tunnel_needed:
+    #     server.stop()
 
     print("Program complete. Exiting.")
 
@@ -114,7 +116,12 @@ def get_lbl_hr_feed():
     print("Connecting to LBL's API and downloading HR feed.")
 
     # Send the req, convert results to JSON
-    result = requests.get(creds.lbl_api_endpoint, headers=creds.lbl_api_headers)
+    result = requests.get(
+        creds['LBL_API_ENDPOINT'],
+        headers={
+            'CF-Access-Client-Id': creds['LBL_API_HEADER_CLIENT_ID'],
+            'CF-Access-Client-Secret': creds['LBL_API_HEADER_CLIENT_SECRET']
+        })
     result_json = result.json()
 
     # Output file
@@ -124,16 +131,15 @@ def get_lbl_hr_feed():
 # ----------------------------------------
 def get_reporting_db_data():
     print("Connecting to reporting DB...")
-    sql_creds = creds.sql_creds_local_prod if args.tunnel_needed else creds.sql_creds_server_prod
 
     # Connect to Elements Reporting DB
     try:
         conn = pyodbc.connect(
-            driver=sql_creds['driver'],
-            server=(sql_creds['server'] + ',' + sql_creds['port']),
-            database=sql_creds['database'],
-            uid=sql_creds['user'],
-            pwd=sql_creds['password'],
+            driver=creds['ELEMENTS_REPORTING_DB_DRIVER'],
+            server=(creds['ELEMENTS_REPORTING_DB_SERVER'] + ',' + creds['ELEMENTS_REPORTING_DB_PORT']),
+            database=creds['ELEMENTS_REPORTING_DB_DATABASE'],
+            uid=creds['ELEMENTS_REPORTING_DB_USER'],
+            pwd=creds['ELEMENTS_REPORTING_DB_PASSWORD'],
             trustservercertificate='yes')
     except:
         raise Exception("ERROR CONNECTING TO DATABASE.")
@@ -238,7 +244,7 @@ def transfer_to_google_drive():
                            for filename in files_to_upload]
 
         # Get the file IDs in the g drive tableau data forlder
-        tableau_data_folder_id = '1HbkWZYiptaecVIXMUH3hv9zX4qrYUiWE'
+        tableau_data_folder_id = creds['GDRIVE_LBL_TABLEAU_DATA_FOLDER_ID']
         parent_folder_query = "'" + tableau_data_folder_id + "' in parents"
         results = (
             service.files().list(
