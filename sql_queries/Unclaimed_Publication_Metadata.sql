@@ -1,3 +1,6 @@
+SET TRANSACTION ISOLATION LEVEL SNAPSHOT
+BEGIN TRANSACTION;
+
 -- USE "elements-cdl-prod-reporting";
 
 -- Unclaimed Publication Metadata
@@ -21,3 +24,5 @@ WHERE u.[Primary Group Descriptor] LIKE '%lbl-%'
       select [Publication ID] from [Publication User Relationship] pur
       INNER JOIN [User] u on u.[ID] = pur.[User ID]
      WHERE u.[Primary Group Descriptor] LIKE '%lbl-%');
+
+COMMIT TRANSACTION;
