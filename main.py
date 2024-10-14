@@ -145,6 +145,9 @@ def get_reporting_db_data():
         raise Exception("ERROR CONNECTING TO DATABASE.")
         exit(0)
 
+    # Required if the queries include transactions
+    conn.autocommit = True
+
     # Get the SQL query files, filter for anything non-SQL.
     query_files = os.listdir("sql_queries")
     query_files = [file for file in query_files if ".sql" in file]
