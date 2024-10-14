@@ -1,3 +1,6 @@
+SET TRANSACTION ISOLATION LEVEL SNAPSHOT
+BEGIN TRANSACTION;
+
 -- USE "elements-cdl-prod-reporting";
 -- Retrieves pubs claimed by LBL users within the past 7 years (to filter out extremely out entries for elements)
 -- for the purpose of measuring compliance.
@@ -72,3 +75,5 @@ AND (p.[ID] in (
         WHERE u.[Primary Group Descriptor] LIKE '%lbl-%'
         AND u.[LBL Employee ID] is not NULL
         AND p.[doi] is not NULL));
+
+COMMIT TRANSACTION;
