@@ -28,7 +28,7 @@ BEGIN TRANSACTION;
 
 SELECT DISTINCT
 	g.[ID] as [Grant ID],
-	g.[funder-name],
+	g.[funder name],
 	g.[funder-reference],
 	g.[title]
 INTO
@@ -129,7 +129,7 @@ pub_metadata as (
 			ON p.id = gpr.[Publication ID]
 		LEFT JOIN #doe_grants dg
 			ON dg.[Grant ID] = gpr.[Grant ID]
-		LEFT JOIN [Publication OA Policy Exception] oax
+		LEFT JOIN [Publication OA Exception] oax
 			ON p.id = oax.[Publication ID]
 )
 SELECT
