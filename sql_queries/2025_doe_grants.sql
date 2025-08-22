@@ -1,0 +1,1 @@
+select * from #doe_grants;

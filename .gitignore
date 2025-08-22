@@ -9,3 +9,5 @@ credentials.json
 logs/
 .env
 venv/
+working-versions/
+sql_queries/working
