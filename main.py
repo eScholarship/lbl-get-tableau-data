@@ -1,30 +1,25 @@
+# http://requests.readthedocs.org/en/latest/
+# https://github.com/mkleehammer/pyodbc/wiki
+# https://openpyxl.readthedocs.io/en/stable/
+
 # Internal imports
 import csv
 import argparse
 import os
 from pprint import pprint
 
-
 # External imports
 import requests
-# http://requests.readthedocs.org/en/latest/
 import pyodbc
-# https://github.com/mkleehammer/pyodbc/wiki
 import openpyxl
-# https://openpyxl.readthedocs.io/en/stable/
 from dotenv import dotenv_values
+import boto3
 
 
 # -----------------------------
 # Creds and Arguments
 creds = dotenv_values()
 parser = argparse.ArgumentParser()
-
-parser.add_argument("-t", "--tunnel",
-                    dest="tunnel_needed",
-                    action="store_true",
-                    default=False,
-                    help="Optional. Include to run the connection through a tunnel.")
 
 parser.add_argument("-fy", "--ostifyfiles",
                     dest="process_osti_fy_files",
@@ -35,7 +30,7 @@ parser.add_argument("-fy", "--ostifyfiles",
 parser.add_argument("-g", "--googledrive",
                     dest="transfer_to_google_drive",
                     action="store_true",
-                    default=False,
+                    default=True,
                     help="Optional. Uploads resulting files to the lbl tableau data google drive.")
 
 parser.add_argument("-nt", "--newtoken",
@@ -49,20 +44,6 @@ args = parser.parse_args()
 
 # ========================================
 def main():
-
-    # Start the tunnel if needed
-    # if args.tunnel_needed:
-    #     print("Opening SSH tunnel.")
-    #     from sshtunnel import SSHTunnelForwarder
-    #
-    #     server = SSHTunnelForwarder(
-    #         creds.ssh_creds['host'],
-    #         ssh_username=creds.ssh_creds['username'],
-    #         ssh_password=creds.ssh_creds['password'],
-    #         remote_bind_address=creds.ssh_creds['remote'],
-    #         local_bind_address=creds.ssh_creds['local'])
-    #
-    #     server.start()
 
     create_output_dir()
 
@@ -79,9 +60,6 @@ def main():
     # Transfer output files to google drive
     if args.transfer_to_google_drive:
         transfer_to_google_drive()
-
-    # if args.tunnel_needed:
-    #     server.stop()
 
     print("Program complete. Exiting.")
 
@@ -118,10 +96,11 @@ def get_lbl_hr_feed():
     # Send the req, convert results to JSON
     result = requests.get(
         creds['LBL_API_ENDPOINT'],
+        stream=True,
         headers={
             'CF-Access-Client-Id': creds['LBL_API_HEADER_CLIENT_ID'],
-            'CF-Access-Client-Secret': creds['LBL_API_HEADER_CLIENT_SECRET']
-        })
+            'CF-Access-Client-Secret': creds['LBL_API_HEADER_CLIENT_SECRET']})
+
     result_json = result.json()
 
     # Output file
@@ -130,34 +109,39 @@ def get_lbl_hr_feed():
 
 # ----------------------------------------
 def get_reporting_db_data():
-    print("Connecting to reporting DB...")
 
-    # Connect to Elements Reporting DB
-    try:
-        conn = pyodbc.connect(
-            driver=creds['ELEMENTS_REPORTING_DB_DRIVER'],
-            server=(creds['ELEMENTS_REPORTING_DB_SERVER'] + ',' + creds['ELEMENTS_REPORTING_DB_PORT']),
-            database=creds['ELEMENTS_REPORTING_DB_DATABASE'],
-            uid=creds['ELEMENTS_REPORTING_DB_USER'],
-            pwd=creds['ELEMENTS_REPORTING_DB_PASSWORD'],
-            trustservercertificate='yes')
-    except:
-        raise Exception("ERROR CONNECTING TO DATABASE.")
-        exit(0)
+    print("Connecting to AWS S3")
+    session = boto3.Session()
+    s3_resource = session.resource('s3')
+
+    print("Connecting to reporting DB...")
+    conn = pyodbc.connect(
+        driver=creds['ELEMENTS_REPORTING_DB_DRIVER'],
+        server=(creds['ELEMENTS_REPORTING_DB_SERVER'] + ',' + creds['ELEMENTS_REPORTING_DB_PORT']),
+        database=creds['ELEMENTS_REPORTING_DB_DATABASE'],
+        uid=creds['ELEMENTS_REPORTING_DB_USER'],
+        pwd=creds['ELEMENTS_REPORTING_DB_PASSWORD'],
+        trustservercertificate='yes')
 
     # Required if the queries include transactions
     conn.autocommit = True
 
-    # Get the SQL query files, filter for anything non-SQL.
-    query_files = os.listdir("sql_queries")
-    query_files = [file for file in query_files if ".sql" in file]
+    sql_files = [
+        {"input": "User_Pub_Relationships.sql", "output": True},
+        {"input": "Unclaimed_Publication_Metadata.sql", "output": True},
+        {"input": "Publication_Metadata.sql", "output": True}]
 
-    for query_file in query_files:
+    for item in sql_files:
+        query_file = item['input']
         print("Querying:", query_file)
+
+        # Connect to S3, read the data
+        obj = s3_resource.Object(creds['S3_BUCKET'], f"{creds['S3_DIR']}/{item['input']}")
+        data = obj.get()['Body'].read()
+        sql_query = data.decode('utf-8')
 
         # Open a cursor, send the query.
         cursor = conn.cursor()
-        sql_query = (open("sql_queries/" + query_file)).read()
         cursor.execute(sql_query)
 
         # pyodbc doesn't have a dict-cursor option, have to do it manually
@@ -165,8 +149,9 @@ def get_reporting_db_data():
         json_array = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
         # Output file
-        output_file = query_file.replace(".sql", ".csv")
-        output_json_to_csv(json_array, output_file)
+        if item['output']:
+            output_file = query_file.replace(".sql", ".csv")
+            output_json_to_csv(json_array, output_file)
 
         cursor.close()
 
@@ -292,7 +277,6 @@ def transfer_to_google_drive():
 
             # The file already exists, update it with the new content.
             else:
-
                 response = service.files().update(
                     fileId=upload_file['id'],
                     media_body=upload_file_path,
