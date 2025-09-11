@@ -9,3 +9,6 @@ credentials.json
 logs/
 .env
 venv/
+working-versions
+sql_queries/working
+boto3-demo.py
