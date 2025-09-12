@@ -91,29 +91,31 @@ def output_json_to_csv(json_array, output_file_name):
 
 
 # ----------------------------------------
+def get_ssm_parameters(folder, names):
+    print("Connect to SSM for parameters")
+    ssm_client = session.client(
+        service_name='ssm', region_name='us-west-2')
+
+    param_names = [f"{folder}{name}" for name in names]
+
+    response = ssm_client.get_parameters(
+        Names=param_names, WithDecryption=True)
+
+    param_values = {}
+    for param in response['Parameters']:
+        k = param['Name'].split('/')[-1]
+        v = param['Value']
+        param_values[k] = v
+
+    return param_values
+
+
+# ----------------------------------------
 def get_lbl_hr_feed():
 
-    def get_lbl_api_params(names):
-        ssm_client = session.client('ssm')
-        folder = "/pub-oapi-tools/lbl-api/"
-        param_names = [f"{folder}{name}" for name in names]
-        response = ssm_client.get_parameter(
-            Names=param_names, WithDecryption=True)
-
-        print(response)
-
-        param_values = {}
-        for param in response['Parameters']:
-            k = param['Name'].split['/'][-1]
-            v = param['Value']
-            param_values[k] = v
-        print(param_values)
-
-        return param_values
-
-    print("Connect to SSM for parameters")
-    param_values = get_lbl_api_params(
-        ['endpoint', 'client-id', 'client-secret'])
+    param_values = get_ssm_parameters(
+        folder="/pub-oapi-tools/lbl-api/",
+        names=['endpoint', 'client-id', 'client-secret'])
 
     print("Connecting to LBL's API and downloading HR feed.")
     result = requests.get(
@@ -131,16 +133,20 @@ def get_lbl_hr_feed():
 # ----------------------------------------
 def get_reporting_db_data():
 
+    param_values = get_ssm_parameters(
+        folder="/pub-oapi-tools/elements-reporting-db/prod/",
+        names=['server', 'database', 'user', 'password'])
+
     print("Connecting to AWS S3")
     s3_resource = session.resource('s3')
 
     print("Connecting to reporting DB...")
     conn = pyodbc.connect(
-        driver=creds['ELEMENTS_REPORTING_DB_DRIVER'],
-        server=(creds['ELEMENTS_REPORTING_DB_SERVER'] + ',' + creds['ELEMENTS_REPORTING_DB_PORT']),
-        database=creds['ELEMENTS_REPORTING_DB_DATABASE'],
-        uid=creds['ELEMENTS_REPORTING_DB_USER'],
-        pwd=creds['ELEMENTS_REPORTING_DB_PASSWORD'],
+        driver="{ODBC Driver 18 for SQL Server}",
+        server=f"{param_values['server']},1433",
+        database=param_values['database'],
+        uid=param_values['user'],
+        pwd=param_values['password'],
         trustservercertificate='yes')
 
     # Required if the queries include transactions
@@ -156,7 +162,8 @@ def get_reporting_db_data():
         print("Querying:", query_file)
 
         # Connect to S3, read the data
-        obj = s3_resource.Object(creds['S3_BUCKET'], f"{creds['S3_DIR']}/{item['input']}")
+        obj = s3_resource.Object(
+            creds['S3_BUCKET'], f"{creds['S3_DIR']}/{item['input']}")
         data = obj.get()['Body'].read()
         sql_query = data.decode('utf-8')
 
@@ -253,7 +260,7 @@ def transfer_to_google_drive():
 
         # Get the file IDs in the g drive tableau data forlder
         tableau_data_folder_id = creds['GDRIVE_LBL_TABLEAU_DATA_FOLDER_ID']
-        parent_folder_query = "'" + tableau_data_folder_id + "' in parents"
+        parent_folder_query = f"'{tableau_data_folder_id}' in parents"
         results = (
             service.files().list(
                 # pageSize=10,
