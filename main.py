@@ -20,6 +20,7 @@ import boto3
 # Creds and Arguments
 creds = dotenv_values()
 parser = argparse.ArgumentParser()
+session = boto3.Session()
 
 parser.add_argument("-fy", "--ostifyfiles",
                     dest="process_osti_fy_files",
@@ -91,15 +92,24 @@ def output_json_to_csv(json_array, output_file_name):
 
 # ----------------------------------------
 def get_lbl_hr_feed():
-    print("Connecting to LBL's API and downloading HR feed.")
 
-    # Send the req, convert results to JSON
+    def get_ssm_param(name):
+        param_name = f"/pub-oapi-tools/lbl-api/{name}"
+        response = ssm_client.get_parameter(Name=param_name, WithDecryption=True)
+        return response['Value']
+
+    print("Connect to SSM for parameters")
+    ssm_client = session.client('ssm')
+    lbl_api_endpoint = get_ssm_param('endpoint')
+    lbl_api_client_id = get_ssm_param('client-id')
+    lbl_api_client_secret = get_ssm_param('client-secret')
+
+    print("Connecting to LBL's API and downloading HR feed.")
     result = requests.get(
-        creds['LBL_API_ENDPOINT'],
+        lbl_api_endpoint,
         stream=True,
-        headers={
-            'CF-Access-Client-Id': creds['LBL_API_HEADER_CLIENT_ID'],
-            'CF-Access-Client-Secret': creds['LBL_API_HEADER_CLIENT_SECRET']})
+        headers={'CF-Access-Client-Id': lbl_api_client_id,
+                 'CF-Access-Client-Secret': lbl_api_client_secret})
 
     result_json = result.json()
 
@@ -111,7 +121,6 @@ def get_lbl_hr_feed():
 def get_reporting_db_data():
 
     print("Connecting to AWS S3")
-    session = boto3.Session()
     s3_resource = session.resource('s3')
 
     print("Connecting to reporting DB...")
