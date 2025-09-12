@@ -93,23 +93,34 @@ def output_json_to_csv(json_array, output_file_name):
 # ----------------------------------------
 def get_lbl_hr_feed():
 
-    def get_ssm_param(name):
-        param_name = f"/pub-oapi-tools/lbl-api/{name}"
-        response = ssm_client.get_parameter(Name=param_name, WithDecryption=True)
-        return response['Value']
+    def get_lbl_api_params(names):
+        ssm_client = session.client('ssm')
+        folder = "/pub-oapi-tools/lbl-api/"
+        param_names = [f"{folder}{name}" for name in names]
+        response = ssm_client.get_parameter(
+            Names=param_names, WithDecryption=True)
+
+        print(response)
+
+        param_values = {}
+        for param in response['Parameters']:
+            k = param['Name'].split['/'][-1]
+            v = param['Value']
+            param_values[k] = v
+        print(param_values)
+
+        return param_values
 
     print("Connect to SSM for parameters")
-    ssm_client = session.client('ssm')
-    lbl_api_endpoint = get_ssm_param('endpoint')
-    lbl_api_client_id = get_ssm_param('client-id')
-    lbl_api_client_secret = get_ssm_param('client-secret')
+    param_values = get_lbl_api_params(
+        ['endpoint', 'client-id', 'client-secret'])
 
     print("Connecting to LBL's API and downloading HR feed.")
     result = requests.get(
-        lbl_api_endpoint,
+        param_values['endpoint'],
         stream=True,
-        headers={'CF-Access-Client-Id': lbl_api_client_id,
-                 'CF-Access-Client-Secret': lbl_api_client_secret})
+        headers={'CF-Access-Client-Id': param_values['client-id'],
+                 'CF-Access-Client-Secret': param_values['client-secret']})
 
     result_json = result.json()
 
