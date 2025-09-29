@@ -67,7 +67,7 @@ def main():
     create_output_dir()
 
     # Connect to LBL's HR feed API and download 1 file
-    get_lbl_hr_feed()
+    # get_lbl_hr_feed()
 
     # Connect to the reporting DB and download 3 files
     get_reporting_db_data()
@@ -98,7 +98,24 @@ def create_output_dir():
 
 
 # ----------------------------------------
-def output_json_to_csv(json_array, output_file_name):
+def output_json_to_csv(json_array, output_file_name, boolean_conversion_fields):
+
+    def convert_booleans(j, boolean_fields):
+
+        for item in j:
+            for boolean_field in boolean_fields:
+                if item[boolean_field] == 1:
+                    item[boolean_field] = 'T'
+                else:
+                    item[boolean_field] = 'F'
+        return j
+
+    output_file_name = output_file_name.replace("2025_", "")
+
+    output_file_no_ext = output_file_name.replace(".csv", "")
+    if output_file_no_ext in boolean_conversion_fields.keys():
+        json_array = convert_booleans(json_array, boolean_conversion_fields[output_file_no_ext])
+
     # Output file
     with open(output_dir + "/" + output_file_name, 'w') as csv_file:
         csv_writer = csv.writer(csv_file)
@@ -150,25 +167,45 @@ def get_reporting_db_data():
 
     # Get the SQL query files, filter for anything non-SQL.
     query_files = os.listdir("sql_queries")
-    query_files = [file for file in query_files if ".sql" in file]
+    # query_files = [file for file in query_files if ".sql" in file]
+    query_files = [
+        "2025_temp_tables.sql",
+        "2025_lbl_users.sql",
+        "2025_lbl_pubs.sql",
+        "2025_doe_grants.sql",
+        "2025_pub_grant_relationship.sql",
+        "2025_pub_user_relationship.sql"]
 
-    for query_file in query_files:
-        print("Querying:", query_file)
+    boolean_conversion_fields = {
+        "lbl_pubs": [
+            "oa_policy_exception",
+            "claimed",
+            "deposited",
+            "doe_grant",
+            "lbl_work_needed"],
+        "pub_user_relationship": ["user_claim"],
+        "pub_grant_relationship": ["Non-DOE funding"]
+    }
 
-        # Open a cursor, send the query.
-        cursor = conn.cursor()
-        sql_query = (open("sql_queries/" + query_file)).read()
-        cursor.execute(sql_query)
+    with conn.cursor() as cursor:
+        for query_file in query_files:
+            print("Querying:", query_file)
+            sql_query = (open("sql_queries/" + query_file)).read()
+            cursor.execute(sql_query)
 
-        # pyodbc doesn't have a dict-cursor option, have to do it manually
-        columns = [column[0] for column in cursor.description]
-        json_array = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            if query_file == '2025_temp_tables.sql':
+                # Temp table creation doesn't return any data
+                print("Temp tables query completed")
 
-        # Output file
-        output_file = query_file.replace(".sql", ".csv")
-        output_json_to_csv(json_array, output_file)
+            else:
+                # Otherwise, output the data
+                # pyodbc doesn't have a dict-cursor option, have to do it manually
 
-        cursor.close()
+                columns = [column[0] for column in cursor.description]
+                json_array = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+                output_file = query_file.replace(".sql", ".csv")
+                output_json_to_csv(json_array, output_file, boolean_conversion_fields)
 
     conn.close()
 
