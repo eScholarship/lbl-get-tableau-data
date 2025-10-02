@@ -20,7 +20,6 @@ import boto3
 # Creds and Arguments
 creds = dotenv_values()
 parser = argparse.ArgumentParser()
-session = boto3.Session()
 
 parser.add_argument("-fy", "--ostifyfiles",
                     dest="process_osti_fy_files",
@@ -34,13 +33,18 @@ parser.add_argument("-g", "--googledrive",
                     default=True,
                     help="Optional. Uploads resulting files to the lbl tableau data google drive.")
 
-parser.add_argument("-nt", "--newtoken",
-                    dest="create_new_token",
-                    action="store_true",
+parser.add_argument("-p", "--profile",
+                    dest="profile",
+                    type=str,
                     default=False,
-                    help="TK TK not yet implemented: Optional. Creates a new google drive token.")
+                    help="Create the Boto3 session with a specific client.")
 
 args = parser.parse_args()
+
+if args.profile:
+    session = boto3.Session(profile_name=args.profile)
+else:
+    session = boto3.Session()
 
 
 # ========================================
@@ -137,9 +141,6 @@ def get_reporting_db_data():
         folder="/pub-oapi-tools/elements-reporting-db/prod/",
         names=['server', 'database', 'user', 'password'])
 
-    print("Connecting to AWS S3")
-    s3_resource = session.resource('s3')
-
     print("Connecting to reporting DB...")
     conn = pyodbc.connect(
         driver="{ODBC Driver 18 for SQL Server}",
@@ -152,20 +153,20 @@ def get_reporting_db_data():
     # Required if the queries include transactions
     conn.autocommit = True
 
-    sql_files = [
-        {"input": "User_Pub_Relationships.sql", "output": True},
-        {"input": "Unclaimed_Publication_Metadata.sql", "output": True},
-        {"input": "Publication_Metadata.sql", "output": True}]
+    github_sql_files = [
+        {"name": "User_Pub_Relationships.sql"},
+        {"name": "Unclaimed_Publication_Metadata.sql"},
+        {"name": "Publication_Metadata.sql"}]
 
-    for item in sql_files:
-        query_file = item['input']
+    github_raw_link = "https://raw.githubusercontent.com/eScholarship/lbl-get-tableau-data/main/sql_queries/"
+
+    for item in github_sql_files:
+
+        # Get the .sql file data from GitHub
+        query_file = item['name']
         print("Querying:", query_file)
-
-        # Connect to S3, read the data
-        obj = s3_resource.Object(
-            creds['S3_BUCKET'], f"{creds['S3_DIR']}/{item['input']}")
-        data = obj.get()['Body'].read()
-        sql_query = data.decode('utf-8')
+        response = requests.get(f"{github_raw_link}/{query_file}")
+        sql_query = response.text
 
         # Open a cursor, send the query.
         cursor = conn.cursor()
@@ -176,9 +177,8 @@ def get_reporting_db_data():
         json_array = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
         # Output file
-        if item['output']:
-            output_file = query_file.replace(".sql", ".csv")
-            output_json_to_csv(json_array, output_file)
+        output_file = query_file.replace(".sql", ".csv")
+        output_json_to_csv(json_array, output_file)
 
         cursor.close()
 
@@ -241,7 +241,7 @@ def transfer_to_google_drive():
         exit(1)
 
     try:
-        # Create the google drive API service
+        # Create the Google Drive API service
         service = build("drive", "v3", credentials=g_creds)
 
         # Collect the files to load and reformat as dicts
