@@ -12,13 +12,10 @@ from pprint import pprint
 import requests
 import pyodbc
 import openpyxl
-from dotenv import dotenv_values
 import boto3
 
 
-# -----------------------------
-# Creds and Arguments
-creds = dotenv_values()
+# Process arguments
 parser = argparse.ArgumentParser()
 
 parser.add_argument("-fy", "--ostifyfiles",
@@ -37,10 +34,11 @@ parser.add_argument("-p", "--profile",
                     dest="profile",
                     type=str,
                     default=False,
-                    help="Create the Boto3 session with a specific client.")
+                    help="Optional. Create the Boto3 session with a specific client.")
 
 args = parser.parse_args()
 
+# Get an AWS session
 if args.profile:
     session = boto3.Session(profile_name=args.profile)
 else:
@@ -104,8 +102,7 @@ def get_ssm_parameters(folder, names):
 
     param_values = {
         (param['Name'].split('/')[-1]): param['Value']
-        for param in response['Parameters']
-    }
+        for param in response['Parameters']}
 
     return param_values
 
@@ -228,13 +225,11 @@ def transfer_to_google_drive():
     # If modifying these scopes, you need to create a new token.json.
     g_scopes = ["https://www.googleapis.com/auth/drive"]
 
-    # This token may need to be refreshed at some point.
-    # TK TK cross that bridge when needed
+    # This token needs to be refreshed annually.
     if os.path.exists("token.json"):
         g_creds = Credentials.from_authorized_user_file("token.json", g_scopes)
     else:
         raise "No token.json found in this directory. Cannot connect to google drive."
-        exit(1)
 
     try:
         # Create the Google Drive API service
@@ -245,8 +240,7 @@ def transfer_to_google_drive():
             "lbl_hr_feed.csv",
             "Publication_Metadata.csv",
             "Unclaimed_Publication_Metadata.csv",
-            "User_Pub_Relationships.csv"
-        ]
+            "User_Pub_Relationships.csv"]
 
         if args.process_osti_fy_files:
             files_to_upload.append(["fy2022.csv", "fy2023.csv", "fy2024.csv"])
@@ -254,8 +248,13 @@ def transfer_to_google_drive():
         files_to_upload = [{'name': filename, 'id': None}
                            for filename in files_to_upload]
 
-        # Get the file IDs in the g drive tableau data forlder
-        tableau_data_folder_id = creds['GDRIVE_LBL_TABLEAU_DATA_FOLDER_ID']
+        # Get the LBL Tableau folder ID
+        param_values = get_ssm_parameters(
+            folder="/pub-oapi-tools/google-drive/",
+            names=['lbl-tableau-folder-id'])
+
+        # Get the file IDs in the g drive tableau data folder
+        tableau_data_folder_id = param_values['lbl-tableau-folder-id']
         parent_folder_query = f"'{tableau_data_folder_id}' in parents"
         results = (
             service.files().list(
