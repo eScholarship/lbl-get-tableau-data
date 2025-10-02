@@ -97,19 +97,15 @@ def output_json_to_csv(json_array, output_file_name):
 # ----------------------------------------
 def get_ssm_parameters(folder, names):
     print("Connect to SSM for parameters")
-    ssm_client = session.client(
-        service_name='ssm', region_name='us-west-2')
+    ssm_client = session.client(service_name='ssm', region_name='us-west-2')
 
     param_names = [f"{folder}{name}" for name in names]
+    response = ssm_client.get_parameters(Names=param_names, WithDecryption=True)
 
-    response = ssm_client.get_parameters(
-        Names=param_names, WithDecryption=True)
-
-    param_values = {}
-    for param in response['Parameters']:
-        k = param['Name'].split('/')[-1]
-        v = param['Value']
-        param_values[k] = v
+    param_values = {
+        (param['Name'].split('/')[-1]): param['Value']
+        for param in response['Parameters']
+    }
 
     return param_values
 
