@@ -47,13 +47,13 @@ as "author_link",
 -- keep, indicates graduate work from lbl employees
 p.[Flagged As Not Externally Funded] as 'not_externally_funded',
 -- OA policy exception
-(select oaex.[Type] AS 'data()' from [Publication OA Policy Exception] oaex
+(select oaex.[OA Exception Type ID] AS 'data()' from [Publication OA Exception] oaex
     where p.[ID] = oaex.[Publication ID]
 for XML PATH(''))
 as "oa_policy_exception",
 -- OA status
-(SELECT DISTINCT [Compliance Status] AS 'data()' from [Publication OA Policy] poap where
-    poap.[Publication ID] = p.[ID] FOR XML PATH(''))
+(SELECT DISTINCT [Compliance Status ID] AS 'data()' from [Publication OA Scheme State] poss where
+    poss.[Publication ID] = p.[ID] FOR XML PATH(''))
 as "oa_status"
 FROM [Publication] p
 WHERE p.[Reporting Date 1] > '2016-12-31'

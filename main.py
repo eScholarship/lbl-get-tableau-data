@@ -2,6 +2,12 @@
 # https://github.com/mkleehammer/pyodbc/wiki
 # https://openpyxl.readthedocs.io/en/stable/
 
+# Commons
+from pub_oapi_tools_common import aws_lambda
+from pub_oapi_tools_common import ucpms_db
+from pub_oapi_tools_common.misc import log
+from pub_oapi_tools_common.misc import output_dict_list_to_csv
+
 # Internal imports
 import csv
 import argparse
@@ -10,9 +16,7 @@ from pprint import pprint
 
 # External imports
 import requests
-import pyodbc
 import openpyxl
-import boto3
 
 
 # Process arguments
@@ -38,16 +42,11 @@ parser.add_argument("-p", "--profile",
 
 args = parser.parse_args()
 
-# Get an AWS session
-if args.profile:
-    session = boto3.Session(profile_name=args.profile)
-else:
-    session = boto3.Session()
-
 
 # ========================================
 def main():
 
+    # Creates a datestamped output folder
     create_output_dir()
 
     # Connect to LBL's HR feed API and download 1 file
@@ -64,7 +63,7 @@ def main():
     if args.transfer_to_google_drive:
         transfer_to_google_drive()
 
-    print("Program complete. Exiting.")
+    log("INFO", __name__, "Program complete. Exiting.")
 
 
 # ----------------------------------------
@@ -72,10 +71,11 @@ def create_output_dir():
     from datetime import datetime
     global output_dir
 
-    output_dir = 'output/' + datetime.today().strftime('%Y-%m-%d-%H-%M-%S')
+    today_string = datetime.today().strftime('%Y-%m-%d-%H-%M-%S')
+    output_dir = f'output/{today_string}'
     os.mkdir(output_dir)
 
-    print("Updated files will be output to: ", output_dir)
+    log("INFO", __name__, f"Updated files will be output to: {output_dir}")
 
 
 # ----------------------------------------
@@ -83,68 +83,41 @@ def output_json_to_csv(json_array, output_file_name):
     # Output file
     with open(output_dir + "/" + output_file_name, 'w') as csv_file:
         csv_writer = csv.writer(csv_file)
-
-        # CSV header
         csv_writer.writerow(json_array[0].keys())
-
-        # CSV rows
         for row in json_array:
             csv_writer.writerow(row.values())
 
 
 # ----------------------------------------
-def get_ssm_parameters(folder, names):
-    print("Connect to SSM for parameters")
-    ssm_client = session.client(service_name='ssm', region_name='us-west-2')
-
-    param_names = [f"{folder}{name}" for name in names]
-    response = ssm_client.get_parameters(Names=param_names, WithDecryption=True)
-
-    param_values = {
-        (param['Name'].split('/')[-1]): param['Value']
-        for param in response['Parameters']}
-
-    return param_values
-
-
-# ----------------------------------------
 def get_lbl_hr_feed():
 
-    param_values = get_ssm_parameters(
-        folder="/pub-oapi-tools/lbl-api/",
-        names=['endpoint', 'client-id', 'client-secret'])
+    # Get params from AWS
+    param_req = {
+        "lbl-hr-feed": {
+            "folder": "pub-oapi-tools/lbl-api/",
+            "names": ['endpoint', 'client-id', 'client-secret']}}
+    creds = aws_lambda.get_parameters(param_req=param_req)
+    creds = creds['lbl-hr-feed']
 
     print("Connecting to LBL's API and downloading HR feed.")
     result = requests.get(
-        param_values['endpoint'],
+        creds['endpoint'],
         stream=True,
-        headers={'CF-Access-Client-Id': param_values['client-id'],
-                 'CF-Access-Client-Secret': param_values['client-secret']})
+        headers={'CF-Access-Client-Id': creds['client-id'],
+                 'CF-Access-Client-Secret': creds['client-secret']})
 
     result_json = result.json()
 
     # Output file
+    # output_file_name = f"{output_dir}/lbl_hr_feed.csv"
+    # output_dict_list_to_csv()
     output_json_to_csv(result_json, 'lbl_hr_feed.csv')
 
 
 # ----------------------------------------
 def get_reporting_db_data():
 
-    param_values = get_ssm_parameters(
-        folder="/pub-oapi-tools/elements-reporting-db/prod/",
-        names=['server', 'database', 'user', 'password'])
-
-    print("Connecting to reporting DB...")
-    conn = pyodbc.connect(
-        driver="{ODBC Driver 18 for SQL Server}",
-        server=f"{param_values['server']},1433",
-        database=param_values['database'],
-        uid=param_values['user'],
-        pwd=param_values['password'],
-        trustservercertificate='yes')
-
-    # Required if the queries include transactions
-    conn.autocommit = True
+    conn = ucpms_db.get_connection(env='prod')
 
     github_sql_files = [
         {"name": "User_Pub_Relationships.sql"},
@@ -162,18 +135,15 @@ def get_reporting_db_data():
         sql_query = response.text
 
         # Open a cursor, send the query.
-        cursor = conn.cursor()
-        cursor.execute(sql_query)
+        with conn.cursor() as cursor:
+            cursor.execute(sql_query)
+            rows = ucpms_db.get_dict_list(cursor)
 
-        # pyodbc doesn't have a dict-cursor option, have to do it manually
-        columns = [column[0] for column in cursor.description]
-        json_array = [dict(zip(columns, row)) for row in cursor.fetchall()]
-
-        # Output file
-        output_file = query_file.replace(".sql", ".csv")
-        output_json_to_csv(json_array, output_file)
-
-        cursor.close()
+            # Output file
+            output_file = query_file.replace(".sql", ".csv")
+            output_dict_list_to_csv(
+                dict_list=rows,
+                output_file_path=f"{output_dir}/{output_file}")
 
     conn.close()
 
@@ -192,7 +162,7 @@ def export_osti_fy_data():
 
         if 'LBNL' not in wb.sheetnames:
             print("ERROR! There is no 'LBNL' sheet in the OSTI workbook.")
-            exit(0)
+            exit(1)
 
         # Load the LBNL sheet, convert data to list
         lbnl_sheet = wb['LBNL']
@@ -207,8 +177,10 @@ def export_osti_fy_data():
             sheet_json.append(row_dict)
 
         # Output file
-        output_file = (osti_file.split(" - ")[0] + ".csv").lower()
-        output_json_to_csv(sheet_json, output_file)
+        output_file_name = (osti_file.split(" - ")[0] + ".csv").lower()
+        output_dict_list_to_csv(
+            dict_list=sheet_json,
+            output_file_path=f"{output_dir}/{output_file_name}")
 
 
 # ----------------------------------------
@@ -229,7 +201,8 @@ def transfer_to_google_drive():
     if os.path.exists("token.json"):
         g_creds = Credentials.from_authorized_user_file("token.json", g_scopes)
     else:
-        raise "No token.json found in this directory. Cannot connect to google drive."
+        log("ERROR", __name__,
+            "No token.json found in this directory. Cannot connect to google drive.")
 
     try:
         # Create the Google Drive API service
@@ -249,12 +222,17 @@ def transfer_to_google_drive():
                            for filename in files_to_upload]
 
         # Get the LBL Tableau folder ID
-        param_values = get_ssm_parameters(
-            folder="/pub-oapi-tools/google-drive/",
-            names=['lbl-tableau-folder-id'])
+        param_req = {
+            "lbl_g_drive": {
+                "folder": "/pub-oapi-tools/google-drive/",
+                "names": ['lbl-tableau-folder-id']
+            }
+        }
+        params = aws_lambda.get_parameters(param_req=param_req)
+        params = params['lbl_g_drive']
 
         # Get the file IDs in the g drive tableau data folder
-        tableau_data_folder_id = param_values['lbl-tableau-folder-id']
+        tableau_data_folder_id = params['lbl-tableau-folder-id']
         parent_folder_query = f"'{tableau_data_folder_id}' in parents"
         results = (
             service.files().list(
@@ -270,7 +248,7 @@ def transfer_to_google_drive():
 
         # Get the files and print a spot-check
         google_drive_files = results.get("files", [])
-        print("G Drive tableau data folder files:")
+        log("INFO", __name__, "G Drive tableau data folder files:")
         pprint(google_drive_files)
 
         # Assign extant IDs to files for upload
@@ -280,7 +258,7 @@ def transfer_to_google_drive():
                     u_file['id'] = g_file['id']
 
         for upload_file in files_to_upload:
-            upload_file_path = output_dir + "/" + upload_file['name']
+            upload_file_path = f"{output_dir}/{upload_file['name']}"
 
             # No matching file in the folder, create a new file:
             if upload_file['id'] is None:
@@ -295,7 +273,7 @@ def transfer_to_google_drive():
                 ).execute()
 
                 if response:
-                    print("CREATED NEW FILE:", response)
+                    log("INFO", __name__, f"CREATED NEW FILE: {response}")
 
             # The file already exists, update it with the new content.
             else:
@@ -305,10 +283,10 @@ def transfer_to_google_drive():
                 ).execute()
 
                 if response:
-                    print("UPDATED FILE:", response)
+                    log("INFO", __name__, f"UPDATED FILE: {response}")
 
-    except HttpError as error:
-        print(f"An error occurred: {error}")
+    except HttpError as e:
+        print(f"An HTTP error occurred: {e}")
 
 
 # ----------------------------------------
