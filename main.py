@@ -34,12 +34,6 @@ parser.add_argument("-g", "--googledrive",
                     default=True,
                     help="Optional. Uploads resulting files to the lbl tableau data google drive.")
 
-parser.add_argument("-p", "--profile",
-                    dest="profile",
-                    type=str,
-                    default=False,
-                    help="Optional. Create the Boto3 session with a specific client.")
-
 args = parser.parse_args()
 
 
@@ -96,7 +90,7 @@ def get_lbl_hr_feed():
         "lbl-hr-feed": {
             "folder": "pub-oapi-tools/lbl-api",
             "names": ['endpoint', 'client-id', 'client-secret']}}
-    creds = aws_lambda.get_parameters(param_req=param_req)
+    creds = aws_lambda.get_parameters(param_req=param_req, verbose=False)
     creds = creds['lbl-hr-feed']
 
     print("Connecting to LBL's API and downloading HR feed.")
