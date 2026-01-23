@@ -94,7 +94,7 @@ def get_lbl_hr_feed():
     # Get params from AWS
     param_req = {
         "lbl-hr-feed": {
-            "folder": "pub-oapi-tools/lbl-api/",
+            "folder": "pub-oapi-tools/lbl-api",
             "names": ['endpoint', 'client-id', 'client-secret']}}
     creds = aws_lambda.get_parameters(param_req=param_req)
     creds = creds['lbl-hr-feed']
@@ -224,7 +224,7 @@ def transfer_to_google_drive():
         # Get the LBL Tableau folder ID
         param_req = {
             "lbl_g_drive": {
-                "folder": "/pub-oapi-tools/google-drive/",
+                "folder": "pub-oapi-tools/google-drive",
                 "names": ['lbl-tableau-folder-id']
             }
         }
